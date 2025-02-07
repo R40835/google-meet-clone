@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Chat</title>
+</head>
+<body>
+    <h1>Video Chat</h1>
+    <button onclick="createRoom()">Create Room</button>
+    <br><br>
+    <input type="text" id="roomId" placeholder="Room ID">
+    <input type="text" id="token" placeholder="Token">
+    <button onclick="joinRoom()">Join Room</button>
+    <br><br>
+    <div id="status"></div>
+    <div id="videoContainer"></div>
+    <p id="username"></p>
+
+    <script>
+        // the tokens are hardcoded for now for testing purposes only
+        // the frontend developer should call the login api and get the token returned by the auth service
+        // ideally it should be stored with js using localStorage so that it could be used in this code as follows:
+        // const userToken = localStorage.getItem('authToken'); 
+
+        const userToken = "48057f77e4257b3ab0b7fe6b7b6566d07fa9e8e9"; // aefd9c13bd131124e7a65cd7486084273a5a718e
+
+
+        const socket = new WebSocket('ws://localhost:3000');
+        let localStream;
+        let peerConnections = {};
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        async function createRoom() {
+             
+            const response = await fetch('http://localhost:3000/create-room', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Token ${userToken}`  // Pass token in Authorization header
+                }
+            });
+            const data = await response.json();
+            console.log(`Room ID: ${data.roomId}\nToken: ${data.token}`);
+        }
+
+        async function joinRoom() {
+            const roomId = document.getElementById('roomId').value;
+            const token = document.getElementById('token').value;
+
+            const response = await fetch('http://localhost:3000/join-room', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Token ${userToken}`  // Pass token in Authorization header
+                },
+                body: JSON.stringify({ roomId, token })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('status').innerText = "Joined room successfully!";
+                startVideoChat(roomId);
+            } else {
+                document.getElementById('status').innerText = "Failed to join room: " + data.message;
+            }
+        }
+
+        async function startVideoChat(roomId) {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            addVideoStream('local', localStream);
+
+            socket.send(JSON.stringify({ type: 'join-room', roomId }));
+
+            socket.addEventListener('message', async (event) => {
+                const message = JSON.parse(event.data);
+
+                if (message.type === 'user-joined') {
+                    createPeerConnection(message.userId, roomId);
+                }
+
+                if (message.type === 'offer') {
+                    createPeerConnection(message.userId, roomId, message.offer);
+                }
+
+                if (message.type === 'answer') {
+                    peerConnections[message.userId].setRemoteDescription(new RTCSessionDescription(message.answer));
+                }
+
+                if (message.type === 'ice-candidate') {
+                    peerConnections[message.userId].addIceCandidate(new RTCIceCandidate(message.candidate));
+                }
+            });
+        }
+
+        async function createPeerConnection(userId, roomId, remoteOffer = null) {
+            const peerConnection = new RTCPeerConnection(config);
+            peerConnections[userId] = peerConnection;
+
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            peerConnection.ontrack = event => {
+                addVideoStream(userId, event.streams[0]);
+            };
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({ type: 'ice-candidate', roomId, userId, candidate: event.candidate }));
+                }
+            };
+
+            if (remoteOffer) {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+                peerConnection.createAnswer().then(answer => {
+                    peerConnection.setLocalDescription(answer);
+                    socket.send(JSON.stringify({ type: 'answer', roomId, userId, answer }));
+                });
+            } else {
+                peerConnection.createOffer().then(offer => {
+                    peerConnection.setLocalDescription(offer);
+                    socket.send(JSON.stringify({ type: 'offer', roomId, userId, offer }));
+                });
+            }
+        }
+        
+        async function createPeerConnection(userId, roomId, remoteOffer = null) {
+            const peerConnection = new RTCPeerConnection(config);
+            peerConnections[userId] = peerConnection;
+
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            peerConnection.ontrack = event => {
+                addVideoStream(userId, event.streams[0]);
+            };
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({ type: 'ice-candidate', roomId, userId, candidate: event.candidate }));
+                }
+            };
+
+            if (remoteOffer) {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(remoteOffer));  // Await setting remote offer
+                const answer = await peerConnection.createAnswer();  // Await answer creation
+                await peerConnection.setLocalDescription(answer);  // Await local description setting
+                socket.send(JSON.stringify({ type: 'answer', roomId, userId, answer }));
+            } else {
+                const offer = await peerConnection.createOffer();  // Await offer creation
+                await peerConnection.setLocalDescription(offer);  // Await setting local description
+                socket.send(JSON.stringify({ type: 'offer', roomId, userId, offer }));
+            }
+
+            return peerConnection;  // Return the peer connection object
+        }
+
+        async function addVideoStream(userId, stream) {
+            let video = document.getElementById(userId);
+
+            if (!video) {
+                video = document.createElement('video');
+                video.id = userId;
+                video.autoplay = true;
+                video.playsinline = true;
+                document.getElementById('videoContainer').appendChild(video);
+            }
+
+            video.srcObject = stream;
+
+            // Ensure the video stream is fully loaded before resolving
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve();
+                };
+            });
+
+            console.log(`Video stream added for user ${userId}`);
+        }
+    </script>
+</body>
+</html>
