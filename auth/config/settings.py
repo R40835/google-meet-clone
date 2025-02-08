@@ -24,6 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Get environment variables from .env file
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
+MEDIA_DIR = os.path.join(BASE_DIR, "media")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -132,12 +133,18 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# IMAGES
+MEDIA_URL = '/media/'
+
+MEDIA_ROOT = MEDIA_DIR
+
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = 'login.CustomUser'
+AUTH_USER_MODEL = 'login.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

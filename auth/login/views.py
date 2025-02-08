@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.authentication import TokenAuthentication
 
-from .models import CustomUser
+from .models import User
 
 
 @api_view(['POST'])
@@ -30,7 +30,7 @@ def user_login(request):
         user = None
         if '@' in username:
             try:
-                user = CustomUser.objects.get(email=username)
+                user = User.objects.get(email=username)
             except ObjectDoesNotExist:
                 pass
 
